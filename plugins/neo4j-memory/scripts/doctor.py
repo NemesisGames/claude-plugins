@@ -149,23 +149,67 @@ def main() -> int:
 
         proc = None
         try:
+            # Two traps here, both of which produce a false failure:
+            #
+            #  1. A stdio server exits cleanly (code 0) the moment stdin hits
+            #     EOF. communicate() closes stdin, so it kills the very thing
+            #     it is testing. Keep stdin open and never call communicate().
+            #  2. Reading the output pipes only at the end can deadlock once a
+            #     pipe buffer fills. Write to temp files instead.
+            import tempfile
+            import time
+
+            out_f = tempfile.TemporaryFile(mode="w+", encoding="utf-8",
+                                           errors="replace")
+            err_f = tempfile.TemporaryFile(mode="w+", encoding="utf-8",
+                                           errors="replace")
             proc = subprocess.Popen(
                 [resolved, "mcp", "serve", "--profile", "extended",
                  "--session-strategy", "persistent"],
-                stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE, env=bridged, text=True,
+                stdin=subprocess.PIPE, stdout=out_f, stderr=err_f,
+                env=bridged, text=True,
             )
-            # A healthy stdio server stays up waiting for JSON-RPC. A broken one
-            # exits within a second or two.
+
+            deadline = time.time() + 25
+            while time.time() < deadline and proc.poll() is None:
+                time.sleep(0.5)
+
             try:
-                _, err = proc.communicate(timeout=25)
-                first = next(
-                    (ln for ln in (err or "").splitlines()
-                     if ln.strip() and "Warning" not in ln
-                     and "warn" not in ln.lower()),
-                    "exited with no message",
+                if proc.poll() is None:
+                    raise subprocess.TimeoutExpired(resolved, 25)
+                err_f.seek(0); out_f.seek(0)
+                err, out = err_f.read(), out_f.read()
+                lines = [ln.rstrip() for ln in (err or "").splitlines() if ln.strip()]
+                lines += [ln.rstrip() for ln in (out or "").splitlines() if ln.strip()]
+
+                # Prefer a line that actually looks like an error. Do NOT try to
+                # filter noise by keyword -- a deprecation warning's continuation
+                # line has no warning marker on it, and guessing hides the real
+                # failure. When nothing matches, print the tail verbatim.
+                import re as _re
+
+                if any(ln.startswith("Traceback") for ln in lines):
+                    # In a Python traceback the final line is the exception.
+                    headline = lines[-1]
+                else:
+                    hits = [
+                        ln for ln in lines
+                        if _re.search(r"(^\s*Error\b|Error:|error:|Exception)", ln)
+                    ]
+                    headline = hits[-1] if hits else (
+                        lines[-1] if lines else "exited with no output"
+                    )
+                check(
+                    "MCP server starts",
+                    False,
+                    f"exited with code {proc.returncode}: {headline}",
                 )
-                check("MCP server starts", False, f"exited immediately: {first}")
+                # Always dump the tail so nothing is hidden behind my guess.
+                if lines:
+                    print("       --- server output (last 15 lines) ---")
+                    for ln in lines[-15:]:
+                        print(f"       | {ln}")
+                    print("       --------------------------------------")
             except subprocess.TimeoutExpired:
                 check("MCP server starts", True, "stayed up (healthy)")
         except Exception as exc:  # noqa: BLE001

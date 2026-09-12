@@ -9,7 +9,7 @@
       "name": "neo4j-memory",
       "source": "./plugins/neo4j-memory",
       "description": "Persistent graph memory for Claude Code, backed by Neo4j Agent Memory. Recalls relevant context at session start and before each prompt, and captures entities, preferences, and decisions as you work.",
-      "version": "0.4.0",
+      "version": "0.5.0",
       "author": {
         "name": "Alejandro Huerta"
       },
