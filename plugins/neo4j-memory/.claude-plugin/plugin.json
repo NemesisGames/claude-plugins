@@ -1,6 +1,6 @@
 {
   "name": "neo4j-memory",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Persistent graph memory for Claude Code, backed by Neo4j Agent Memory. Recalls relevant context at session start and before each prompt, and captures entities, preferences, and decisions as you work.",
   "author": {
     "name": "Alejandro Huerta",
@@ -10,7 +10,7 @@
   "license": "MIT",
   "mcpServers": {
     "neo4j-memory": {
-      "command": "neo4j-agent-memory",
+      "command": "${NEO4J_MEMORY_CMD:-neo4j-agent-memory}",
       "args": [
         "mcp", "serve",
         "--profile", "extended",

@@ -40,9 +40,74 @@ def main() -> int:
         check(
             "neo4j-agent-memory installed",
             False,
-            'pip install "neo4j-agent-memory[mcp,anthropic,sentence-transformers]"',
+            'pip install "neo4j-agent-memory[mcp,anthropic,'
+            'sentence-transformers,spacy,gliner]"',
         )
         return 1
+
+    # 1b. Launch preflight.
+    #
+    # The library being importable is not the same as the plugin being able to
+    # START it. The MCP server runs a console script, and the hooks run a
+    # Python interpreter -- both resolved through PATH by a process spawn, not
+    # by your shell. A user-site pip install puts the console script in a
+    # directory Windows does not add to PATH, which presents as an opaque
+    # "Connection closed" with no other clue. Check both launchers explicitly.
+    import shutil
+
+    mcp_cmd = os.environ.get("NEO4J_MEMORY_CMD", "neo4j-agent-memory")
+    resolved = shutil.which(mcp_cmd)
+    if resolved:
+        check("MCP launcher on PATH", True, resolved)
+    else:
+        import sysconfig
+
+        guesses = []
+        for scheme in ("nt_user", "posix_user", "nt", "posix_prefix"):
+            try:
+                d = sysconfig.get_path("scripts", scheme)
+            except Exception:
+                continue
+            if d and os.path.isdir(d):
+                for ext in (".exe", ""):
+                    p = os.path.join(d, "neo4j-agent-memory" + ext)
+                    if os.path.isfile(p):
+                        guesses.append(p)
+        detail = f"'{mcp_cmd}' not found on PATH"
+        if guesses:
+            detail += (
+                f" -- but it exists at {guesses[0]}. Either add that folder to"
+                f" PATH, or set NEO4J_MEMORY_CMD to the full path"
+            )
+        else:
+            detail += " -- reinstall with the [mcp] extra, or set NEO4J_MEMORY_CMD"
+        check("MCP launcher on PATH", False, detail)
+
+    hook_py = shutil.which("python") or shutil.which("python3")
+    if hook_py:
+        import subprocess
+
+        try:
+            out = subprocess.run(
+                [hook_py, "-c", "import sys;print('%d.%d' % sys.version_info[:2])"],
+                capture_output=True, text=True, timeout=15,
+            ).stdout.strip()
+            major, minor = (int(x) for x in out.split("."))
+            check(
+                "hook interpreter",
+                (major, minor) >= (3, 10),
+                f"{hook_py} (Python {out})"
+                + ("" if (major, minor) >= (3, 10) else " -- needs 3.10+"),
+            )
+        except Exception as exc:  # noqa: BLE001
+            check("hook interpreter", False, f"{hook_py} unusable: {exc}", fatal=False)
+    else:
+        check(
+            "hook interpreter",
+            False,
+            "neither 'python' nor 'python3' on PATH -- the hooks cannot run,"
+            " and they fail silently by design, so memory would just never work",
+        )
 
     # 2. Environment
     uri = os.environ.get("NAM_NEO4J__URI") or os.environ.get("NEO4J_URI")

@@ -100,40 +100,96 @@ setx NAM_EMBEDDING__DIMENSIONS "768"
 
 Open a new terminal afterwards — `setx` does not affect the current one.
 
-### 3. Verify before wiring it in
+### 3. Make sure the launchers are reachable
+
+The plugin starts two things by name, and both are resolved through `PATH` by
+a process spawn rather than by your shell:
+
+| What | Runs | Needs |
+| --- | --- | --- |
+| MCP server | `neo4j-agent-memory` | its console script on `PATH` |
+| The four hooks | `python` | Python 3.10+ on `PATH` |
+
+Check both:
+
+```bash
+# macOS / Linux
+which neo4j-agent-memory && python --version
+
+# Windows
+where neo4j-agent-memory && python --version
+```
+
+**If `neo4j-agent-memory` isn't found**, pip almost certainly did a *user-site*
+install because it couldn't write to the interpreter's directory. The package
+imports fine; only the console script landed somewhere `PATH` doesn't look:
+
+- Windows: `%APPDATA%\Python\Python3XX\Scripts\`
+- macOS / Linux: `~/.local/bin`
+
+Either add that directory to `PATH`, or point the plugin straight at the
+executable without touching `PATH` at all:
+
+```bash
+# Windows
+setx NEO4J_MEMORY_CMD "C:\Users\<you>\AppData\Roaming\Python\Python314\Scripts\neo4j-agent-memory.exe"
+
+# macOS / Linux
+export NEO4J_MEMORY_CMD="$HOME/.local/bin/neo4j-agent-memory"
+```
+
+**If `python` isn't found** (common on Debian, Ubuntu, and recent macOS, which
+ship only `python3`), the hooks cannot run. They fail silently by design, so
+the symptom is memory that simply never happens — no error anywhere. Install a
+`python` shim, or use a virtualenv, which provides one.
+
+When the MCP server can't start, Claude Code reports only
+`CONNECTION_CLOSED` with no further detail. That message almost always means
+one of these two launchers, not a problem with Neo4j.
+
+### 4. Verify before wiring it in
 
 ```bash
 python scripts/doctor.py
 ```
 
-The first run downloads the embedding model (~440MB) and may take a minute.
+The doctor checks both launchers above, then the credentials, the embedding
+model, and the vector index dimensions. The first run downloads the embedding
+model (~440MB) and may take a minute.
+
 Do not skip this step: a dimension mismatch or a missing extra fails
 *silently* at runtime, and you will think the plugin simply does nothing.
 
-### 4. Load the plugin
+### 5. Load the plugin
 
-For development, point Claude Code straight at the directory:
+This plugin ships inside a marketplace repo, so install it from there:
+
+```
+/plugin marketplace add <owner>/claude-plugins
+/plugin install neo4j-memory@ahuerta-plugins
+```
+
+A local path works too, if you have the repo checked out:
+
+```
+/plugin marketplace add /path/to/claude-plugins
+```
+
+**Claude desktop app**: `--plugin-dir` and the `/plugin` panel are terminal-CLI
+features. Use the **+** button next to the prompt box → **Plugins** →
+**Add plugin**, and pick this plugin from the marketplace once registered.
+
+**Terminal CLI only**, for developing against a working copy without
+installing:
 
 ```bash
-claude --plugin-dir /path/to/neo4j-memory
+claude --plugin-dir /path/to/claude-plugins/plugins/neo4j-memory
 ```
 
-To install it properly, make the parent directory a local marketplace:
+After installing, **fully quit and reopen** the app. Plugin MCP servers do not
+connect mid-session — in desktop sessions they wait for the next session.
 
-```
-marketplace/
-├── .claude-plugin/
-│   └── marketplace.json
-└── plugins/
-    └── neo4j-memory/
-```
-
-```bash
-claude plugin marketplace add /path/to/marketplace
-claude plugin install neo4j-memory
-```
-
-### 5. Confirm
+### 6. Confirm
 
 Start a session and run `/memory-status`. Then have a real conversation, end
 it, and start a new one — the SessionStart banner should reflect what you
