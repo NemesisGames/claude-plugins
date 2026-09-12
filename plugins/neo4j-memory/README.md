@@ -105,10 +105,13 @@ Open a new terminal afterwards — `setx` does not affect the current one.
 The plugin starts two things by name, and both are resolved through `PATH` by
 a process spawn rather than by your shell:
 
-| What | Runs | Needs |
+| What | Runs | Override if it isn't found |
 | --- | --- | --- |
-| MCP server | `neo4j-agent-memory` | its console script on `PATH` |
-| The four hooks | `python` | Python 3.10+ on `PATH` |
+| MCP server | `neo4j-agent-memory` | `NEO4J_MEMORY_CMD` |
+| The four hooks | `python` | `NEO4J_MEMORY_PYTHON` |
+
+Both accept either a bare name or a full path, so you can fix either without
+touching `PATH` at all.
 
 Check both:
 
@@ -138,10 +141,18 @@ setx NEO4J_MEMORY_CMD "C:\Users\<you>\AppData\Roaming\Python\Python314\Scripts\n
 export NEO4J_MEMORY_CMD="$HOME/.local/bin/neo4j-agent-memory"
 ```
 
-**If `python` isn't found** (common on Debian, Ubuntu, and recent macOS, which
-ship only `python3`), the hooks cannot run. They fail silently by design, so
-the symptom is memory that simply never happens — no error anywhere. Install a
-`python` shim, or use a virtualenv, which provides one.
+**If `python` isn't found** — common on Debian, Ubuntu, and recent macOS, which
+ship only `python3` — point the hooks at the right name:
+
+```bash
+export NEO4J_MEMORY_PYTHON=python3
+```
+
+This matters more than it looks. The hooks fail silently by design (a memory
+system that breaks your editor is worse than no memory), so a missing
+interpreter produces no error anywhere — just memory that never happens.
+`scripts/doctor.py` resolves the interpreter exactly the way `hooks.json` does
+and tells you which variable to set.
 
 When the MCP server can't start, Claude Code reports only
 `CONNECTION_CLOSED` with no further detail. That message almost always means

@@ -83,7 +83,30 @@ def main() -> int:
             detail += " -- reinstall with the [mcp] extra, or set NEO4J_MEMORY_CMD"
         check("MCP launcher on PATH", False, detail)
 
-    hook_py = shutil.which("python") or shutil.which("python3")
+    # Resolve the interpreter exactly the way hooks.json does:
+    # ${NEO4J_MEMORY_PYTHON:-python}. Checking anything else here would let the
+    # doctor pass while the hooks silently fail.
+    hook_name = os.environ.get("NEO4J_MEMORY_PYTHON", "python")
+    hook_py = shutil.which(hook_name)
+    if not hook_py:
+        alt = shutil.which("python3")
+        if alt:
+            check(
+                "hook interpreter",
+                False,
+                f"hooks will run '{hook_name}', which is not on PATH -- but"
+                f" python3 is, at {alt}. Set NEO4J_MEMORY_PYTHON=python3",
+            )
+        else:
+            check(
+                "hook interpreter",
+                False,
+                f"'{hook_name}' not on PATH and no python3 either. The hooks"
+                " cannot run, and they fail silently by design, so memory"
+                " would simply never happen",
+            )
+        hook_py = None
+
     if hook_py:
         import subprocess
 
@@ -101,13 +124,55 @@ def main() -> int:
             )
         except Exception as exc:  # noqa: BLE001
             check("hook interpreter", False, f"{hook_py} unusable: {exc}", fatal=False)
-    else:
-        check(
-            "hook interpreter",
-            False,
-            "neither 'python' nor 'python3' on PATH -- the hooks cannot run,"
-            " and they fail silently by design, so memory would just never work",
-        )
+
+    # 1c. Actually start the MCP server.
+    #
+    # Everything else here tests the library. The MCP server is a separate
+    # process launched through the CLI, and the CLI reads a DIFFERENT set of
+    # environment variables than the library does (NEO4J_PASSWORD, not
+    # NAM_NEO4J__PASSWORD). A config that satisfies the hooks can still leave
+    # the server exiting instantly, and Claude Code reports only
+    # "CONNECTION_CLOSED" with none of the detail. So launch it and read stderr.
+    if resolved:
+        import subprocess
+
+        bridged = dict(os.environ)
+        for cli_name, lib_name, fallback in (
+            ("NEO4J_URI", "NAM_NEO4J__URI", "bolt://localhost:7687"),
+            ("NEO4J_USER", "NAM_NEO4J__USERNAME", "neo4j"),
+            ("NEO4J_PASSWORD", "NAM_NEO4J__PASSWORD", None),
+            ("NEO4J_DATABASE", "NAM_NEO4J__DATABASE", "neo4j"),
+        ):
+            value = os.environ.get(cli_name) or os.environ.get(lib_name) or fallback
+            if value:
+                bridged[cli_name] = value
+
+        proc = None
+        try:
+            proc = subprocess.Popen(
+                [resolved, "mcp", "serve", "--profile", "extended",
+                 "--session-strategy", "persistent"],
+                stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE, env=bridged, text=True,
+            )
+            # A healthy stdio server stays up waiting for JSON-RPC. A broken one
+            # exits within a second or two.
+            try:
+                _, err = proc.communicate(timeout=25)
+                first = next(
+                    (ln for ln in (err or "").splitlines()
+                     if ln.strip() and "Warning" not in ln
+                     and "warn" not in ln.lower()),
+                    "exited with no message",
+                )
+                check("MCP server starts", False, f"exited immediately: {first}")
+            except subprocess.TimeoutExpired:
+                check("MCP server starts", True, "stayed up (healthy)")
+        except Exception as exc:  # noqa: BLE001
+            check("MCP server starts", False, f"could not launch: {exc}", fatal=False)
+        finally:
+            if proc and proc.poll() is None:
+                proc.kill()
 
     # 2. Environment
     uri = os.environ.get("NAM_NEO4J__URI") or os.environ.get("NEO4J_URI")

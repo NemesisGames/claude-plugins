@@ -1,5 +1,15 @@
 {
   "description": "neo4j-memory: automatic recall and capture against a Neo4j Agent Memory graph.",
+  "_interpreter": [
+    "Every handler runs through ${NEO4J_MEMORY_PYTHON:-python}.",
+    "The default 'python' is correct on Windows, where the python.org installer",
+    "provides it. On Debian, Ubuntu, and recent macOS there is often only",
+    "'python3', so those users set NEO4J_MEMORY_PYTHON=python3 (or the full path",
+    "to an interpreter) once, and every hook follows.",
+    "Handlers are spawned directly rather than through a shell, so the",
+    "interpreter is resolved via PATH by the spawn itself -- a PATH that is",
+    "Claude Code's, not your terminal's. scripts/doctor.py checks this."
+  ],
   "hooks": {
     "SessionStart": [
       {
@@ -7,7 +17,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python \"${CLAUDE_PLUGIN_ROOT}/hooks/session_start.py\"",
+            "command": "${NEO4J_MEMORY_PYTHON:-python}",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/session_start.py"],
             "timeout": 20
           }
         ]
@@ -18,7 +29,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python \"${CLAUDE_PLUGIN_ROOT}/hooks/prompt_recall.py\"",
+            "command": "${NEO4J_MEMORY_PYTHON:-python}",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/prompt_recall.py"],
             "timeout": 10
           }
         ]
@@ -29,7 +41,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python \"${CLAUDE_PLUGIN_ROOT}/hooks/capture.py\"",
+            "command": "${NEO4J_MEMORY_PYTHON:-python}",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/capture.py"],
             "timeout": 10
           }
         ]
@@ -40,7 +53,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python \"${CLAUDE_PLUGIN_ROOT}/hooks/session_end.py\"",
+            "command": "${NEO4J_MEMORY_PYTHON:-python}",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/session_end.py"],
             "timeout": 15
           }
         ]
