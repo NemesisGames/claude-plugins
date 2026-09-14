@@ -134,18 +134,65 @@ def read_hook_input() -> dict[str, Any]:
         return {}
 
 
-def emit_context(event_name: str, context: str) -> None:
-    """Inject text into Claude's context and exit cleanly."""
-    if not context or not context.strip():
-        sys.exit(0)
-    payload = {
-        "hookSpecificOutput": {
+def emit_context(event_name: str, context: str, system_message: str = "") -> None:
+    """Emit the hook result and exit cleanly.
+
+    Two independent channels: `additionalContext` is what Claude sees, and
+    `systemMessage` is the line printed in the user's terminal. A recall that
+    found nothing still reports that it ran, so the memory layer is never
+    silently dead.
+
+    json.dumps escapes non-ASCII by default, which keeps the status line safe
+    on Windows consoles that are not UTF-8.
+    """
+    payload: dict[str, Any] = {}
+
+    if context and context.strip():
+        payload["hookSpecificOutput"] = {
             "hookEventName": event_name,
             "additionalContext": context,
         }
-    }
-    print(json.dumps(payload))
+    if system_message:
+        payload["systemMessage"] = system_message
+
+    if payload:
+        print(json.dumps(payload))
     sys.exit(0)
+
+
+MEMORY_TAG = "🧠 neo4j-memory"
+
+
+def recall_summary(
+    entities: list[Any],
+    preferences: list[Any],
+    messages: list[Any],
+    label: str,
+) -> str:
+    """One-line account of what a recall actually put into the context window.
+
+    Counts are clamped to MAX_RECALL_ITEMS because that is what format_recall
+    renders; reporting the raw hit count would overstate what Claude got.
+    """
+    counts = (
+        (preferences, "preference", "preferences"),
+        (entities, "entity", "entities"),
+        (messages, "message", "messages"),
+    )
+    parts = []
+    for items, singular, plural in counts:
+        n = min(len(items or []), MAX_RECALL_ITEMS)
+        if n:
+            parts.append(f"{n} {singular if n == 1 else plural}")
+
+    if not parts:
+        return f"{MEMORY_TAG}: {label} found nothing"
+    return f"{MEMORY_TAG}: {label} recalled " + ", ".join(parts)
+
+
+def unavailable_summary(label: str) -> str:
+    """Status line for a recall that timed out or could not reach the graph."""
+    return f"{MEMORY_TAG}: {label} unavailable (graph unreachable or timed out)"
 
 
 def get_prompt(data: dict[str, Any]) -> str:

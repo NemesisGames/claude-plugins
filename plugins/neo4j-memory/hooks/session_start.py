@@ -21,8 +21,10 @@ from memory_lib import (  # noqa: E402
     project_key,
     project_scope,
     read_hook_input,
+    recall_summary,
     run_memory,
     session_id_for,
+    unavailable_summary,
 )
 
 
@@ -62,9 +64,9 @@ def main() -> None:
     result = run_memory(load, budget=RECALL_BUDGET * 2, default=None)
 
     if not result:
-        # No memory available. Say nothing rather than announcing a failure --
-        # a banner about a degraded subsystem on every session start is noise.
-        sys.exit(0)
+        # No memory available. Nothing goes into Claude's context, but the user
+        # is told, so a dead graph does not look like an empty one.
+        emit_context("SessionStart", "", unavailable_summary("project memory"))
 
     preferences, entities, messages = result
     context = format_recall(
@@ -81,7 +83,16 @@ def main() -> None:
             f"something worth keeping."
         )
 
-    emit_context("SessionStart", context)
+    emit_context(
+        "SessionStart",
+        context,
+        recall_summary(
+            entities=entities or [],
+            preferences=preferences or [],
+            messages=messages or [],
+            label="project memory",
+        ),
+    )
 
 
 if __name__ == "__main__":

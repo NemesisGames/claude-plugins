@@ -27,9 +27,11 @@ from memory_lib import (  # noqa: E402
     log,
     project_scope,
     read_hook_input,
+    recall_summary,
     run_memory,
     session_id_for,
     spawn_detached,
+    unavailable_summary,
 )
 
 
@@ -81,7 +83,11 @@ def main() -> None:
 
     result = run_memory(recall, budget=RECALL_BUDGET, default=None)
     if not result:
-        sys.exit(0)
+        # The graph is down or slow. Say so once per turn rather than leaving
+        # the user to assume memory is working.
+        emit_context(
+            "UserPromptSubmit", "", unavailable_summary("prompt recall")
+        )
 
     entities, preferences, messages = result
     context = format_recall(
@@ -91,7 +97,16 @@ def main() -> None:
         heading="Recalled context",
     )
 
-    emit_context("UserPromptSubmit", context)
+    emit_context(
+        "UserPromptSubmit",
+        context,
+        recall_summary(
+            entities=entities or [],
+            preferences=preferences or [],
+            messages=messages or [],
+            label="prompt recall",
+        ),
+    )
 
 
 if __name__ == "__main__":

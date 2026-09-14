@@ -36,6 +36,12 @@ Four hooks, running automatically:
 - **SessionEnd** — asks Claude to distil the session into durable facts,
   preferences, and entities. Most sessions produce nothing, by design.
 
+Both recall hooks print a one-line status in the session so you can see the
+graph working — `🧠 neo4j-memory: prompt recall recalled 1 entity, 2 messages`,
+or `found nothing`, or `unavailable` when the graph cannot be reached. Counts
+are what actually reached Claude's context, not raw hit counts. Writes stay
+silent: they are fire-and-forget, so there is no outcome to report yet.
+
 Plus 16 MCP tools, four slash commands (`/remember`, `/recall`,
 `/memory-status`, `/forget`), and a skill teaching Claude when memory is worth
 writing to.
@@ -243,9 +249,10 @@ MATCH (e:Entity) RETURN e.name, e.type, e.description ORDER BY e.updated_at DESC
 ## Failure behaviour
 
 Every hook catches everything and exits 0. If Neo4j is unreachable, the VPN is
-off, or the model cache is cold, you get *no memory* — never a broken session,
-never an error banner. Turn on `NEO4J_MEMORY_DEBUG=1` to log to
-`~/.claude/neo4j-memory.log` when silence is suspicious.
+off, or the model cache is cold, you get *no memory* — never a broken session.
+The recall hooks say so in one line rather than failing invisibly, so a dead
+graph never looks like an empty one. Turn on `NEO4J_MEMORY_DEBUG=1` to log to
+`~/.claude/neo4j-memory.log` for the underlying error.
 
 ## Security notes
 
